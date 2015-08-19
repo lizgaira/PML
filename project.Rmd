@@ -1,0 +1,84 @@
+---
+title: "Practical Machine Learning Project"
+output: html_document
+---
+
+##1. Getting and cleaning data.
+
+We first download and read de data (setting *na.strings* to read data properly), then we have a first look.
+
+```{r, reading data}
+data<-read.delim("pml-training.csv", sep=",", header=T, dec=".", na.strings=c("","#DIV/0!", NA), 
+                 stringsAsFactors=F)
+dim(data)
+#table(sapply(data,class))#check the way data is read.
+#summary(data)
+#str(data)
+```
+
+The training data set has 19622 rows and 160 columns. We should remove the variables with many missing values or that are not informative for predicting *classe*.
+
+```{r, remove columns with NAs}
+#calculate the proportion of NAs in each column
+#only keep columns if less than 20% are missing values.
+proportion_na<-function(x) {(sum(is.na(x)))/(length(x))} 
+data_na <- apply(data, 2, proportion_na)
+data2 <- data[, data_na < 0.2]
+dim(data2)#60 cols
+```
+
+```{r, remove non-informative features *(user_name, ~timestamp~ , ~window~)}
+data3<-data2[,-c(1:7)]
+#dim(data3) #53 cols
+#str(data3)
+```
+Our cleaned data set contains 19622 rows and 53 columns.
+
+
+##2. Training and validation subsetting.
+
+We define training and validation sets using *classe*: 70% - 30%. We use validation in order to "pre-test" our model before applying it to the "real" test data set.
+
+```{r, cross validate, message=FALSE}
+library(caret)
+inTrain <- createDataPartition(data3$classe, p=.7, list=FALSE)
+training <- data3[inTrain,]
+training$classe<-as.factor(training$classe)
+validation <- data3[-inTrain,]
+validation$classe<-as.factor(validation$classe)
+#table(training$classe)
+#table(validation$classe) #to check if groups are proportional between partitions.
+#str(training)
+```
+
+##3. Random forest.
+
+We choose random forest algorithm because is one of the top algorithms used in contexts (accuracy, robustness), with a 5-fold cross validation .
+
+```{r, random forest, message=FALSE}
+modrf <- train(classe ~.,data = training, method="rf", trControl = trainControl(method="cv", 5))
+```
+
+##4. Validation: out-of-sample error.
+We use our model to predict valules in the validation data set.
+```{r, validation, message=FALSE}
+pred_rf <- predict(modrf, validation)
+confusionMatrix(validation$classe, pred_rf)
+```
+Accuracy:
+```{r, accuracy, echo=FALSE}
+postResample(pred_rf, validation$classe) #accuracy
+```
+Expected out-of-sample error:
+```{r, out of sample error, echo=FALSE}
+1 - as.numeric(confusionMatrix(validation$classe, pred_rf)$overall[1]) #error
+```
+
+
+##5. Test data set.
+```{r}
+test<-read.delim("pml-testing.csv", sep=",", header=T, dec=".", na.strings=c("","#DIV/0!", NA), 
+                 stringsAsFactors=F)
+test_pred <- predict(modrf, test)
+```
+Applying the algorithm to the testing data set results in a correct prediction for all of the 20 id_problems. Other methods applied to the training function ("glm", "gbm", "rpart") were tested, but for space reasons are not included in the present report.
